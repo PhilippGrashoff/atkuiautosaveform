@@ -1,0 +1,16 @@
+<phpunit bootstrap="vendor/autoload.php" printerClass="Atk4\Core\Phpunit\ResultPrinter" colors="true">
+    <testsuites>
+        <testsuite name="tests">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <coverage>
+        <include>
+            <directory>src</directory>
+            <directory>tests</directory>
+        </include>
+        <report>
+            <php outputFile="coverage/phpunit.cov"/>
+        </report>
+    </coverage>
+</phpunit>

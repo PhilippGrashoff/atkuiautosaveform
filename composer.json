@@ -1,0 +1,24 @@
+{
+  "name": "philippgrashoff/atkuiautosaveform",
+  "description": "An extension of Atk4\\Ui\\Form which automatically saves each change",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "require": {
+    "php": "8.*",
+    "atk4/ui": "5.*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "10.*",
+    "phpstan/phpstan": "1.*"
+  },
+  "autoload": {
+    "psr-4": {
+      "PhilippR\\Atk4\\AutoSaveForm\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "PhilippR\\Atk4\\AutoSaveForm\\Tests\\": "tests"
+    }
+  }
+}
