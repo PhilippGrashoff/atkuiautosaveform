@@ -6,8 +6,12 @@ use Atk4\Data\ValidationException;
 use Atk4\Ui\Exception;
 use Atk4\Ui\Form;
 use Atk4\Ui\Form\Control;
+use Atk4\Ui\Form\Control\Calendar;
+use Atk4\Ui\Form\Control\Checkbox;
 use Atk4\Ui\Form\Control\Dropdown;
 use Atk4\Ui\Form\Control\Line;
+use Atk4\Ui\Form\Control\Lookup;
+use Atk4\Ui\Form\Control\Radio;
 use Atk4\Ui\Form\Control\Textarea;
 use Atk4\Ui\Js\Jquery;
 use Atk4\Ui\Js\JsBlock;
@@ -48,6 +52,12 @@ class AutoSaveForm extends Form
     public int $loadingDuration = 300;
 
     /**
+     * @var int $waitBeforeSubmit how long the events for fields with text input wait before submitting the form;
+     * If too small, nearly each keystroke will submit the form
+     */
+    public int $waitBeforeSubmit = 750;
+
+    /**
      * 1) set the stateContext (where the "loading" class is added to on form submit). For AUtoSaveForm, setting the
      *    stateContext to the save button is sensible. Otherwise, the whole form is displayed as loading on each form submit.
      *    $this->buttonSave might be modified after init(), hence this is put into renderView()
@@ -75,22 +85,39 @@ class AutoSaveForm extends Form
 
     /**
      * add the fitting event handlers for automatic form submit depending on the control type
-     * TODO check against all atk4 native input types if the action is correct/sensible.
+     *
      * @throws Exception
      */
     protected function addAutoSubmitToControl(Form\Control $control): void
     {
-        match (get_class($control)) {
-            Textarea::class => $this->addKeyUpEventsToControl($control, 'textarea'),
-            Line::class => $this->addKeyUpEventsToControl($control),
-            default => $this->addOnChangeEventToControl($control)
+        if ($control instanceof Textarea) {
+            $this->addOnInputEventToControl($control, 'textarea');
+            $this->addInitialValue($control);
+        } elseif ($control instanceof Calendar) {
+            $this->addOnInputEventToControl($control, 'input', false);
+            $this->addOnChangeToCalendar($control);
+            $this->disableEnterKeyForControl($control);
+            $this->addInitialValue($control);
+        } elseif ($control instanceof Line) {
+            $this->addOnInputEventToControl($control);
+            $this->disableEnterKeyForControl($control);
+            $this->addInitialValue($control);
+        } elseif (
+            $control instanceof Dropdown
+            || $control instanceof Lookup
+            || $control instanceof Radio
+            || $control instanceof Checkbox
+        ) {
+            $this->addOnChangeEventToControl($control);
         };
     }
 
+    protected function addInitialValue(Control $control): void
+    {
+        $control->setAttr('data-initialvalue', $control->getValue());
+    }
+
     /**
-     * TODO think about existing onChange that might be attached to the dropdown/control already. Maybe better just use
-     * a JQuery to add an additional onChange event to Dropdown?
-     *
      * @param Control $control
      * @return void
      * @throws Exception
@@ -108,34 +135,61 @@ class AutoSaveForm extends Form
         );
     }
 
+    protected function disableEnterKeyForControl(Control $control): void
+    {
+        $control->on(
+            'keydown',
+            'input',
+            new JsExpression('if (event.keyCode === 13) {event.preventDefault(); event.stopPropagation();}'),
+            ['preventDefault' => false, 'stopPropagation' => false]
+        );
+    }
+
+    protected function addOnChangeToCalendar(Calendar $control): void
+    {
+        $control->onChange(
+            new JsBlock(
+                [
+                    (new Jquery($control))->data('initialvalue', (new Jquery($control))->children('input')->val()),
+                    $this->js()->form('submit')
+                ]
+            )
+        );
+    }
+
     /**
      * @param Control $control
      * @param string $inputTag
+     * @param bool $addFormSubmit
      * @return void
      * @throws Exception
      */
-    protected function addKeyUpEventsToControl(Control $control, string $inputTag = 'input'): void
-    {
+    protected function addOnInputEventToControl(
+        Control $control,
+        string $inputTag = 'input',
+        bool $addFormSubmit = true
+    ): void {
         $control->on(
-            'keyup',
+            'input',
             new JsExpression(
                 '
                 if([control].data("initialvalue") !== [inputValue]) {
-                    [savebutton].removeClass("basic");
-                    clearTimeout([control].data("timerId"));
+                    [saveButton].removeClass("basic");'
+                . ($addFormSubmit ? 'clearTimeout([control].data("timerId"));
                     let timer = setTimeout(() => {
                         [submitForm]; [control].data("initialvalue", [inputValue]);
-                    }, 700);
-                    [control].data("timerId", timer);
+                    }, ' . $this->waitBeforeSubmit . ');
+                    [control].data("timerId", timer);'
+                    : '') . '
                 }
                 else {
-                    [savebutton].addClass("basic");
-                    clearTimeout([control].data("timerId"));
-                }',
+                    [saveButton].addClass("basic");'
+                . ($addFormSubmit ? 'clearTimeout([control].data("timerId"));' : '')
+                . '}',
                 [
                     'control' => (new Jquery($control)),
                     'inputValue' => (new Jquery($control))->children($inputTag)->val(),
-                    'savebutton' => (new Jquery($this->buttonSave)),
+                    'saveButton' => (new Jquery($this->buttonSave)),
                     'submitForm' => $this->js()->form('submit'),
                 ],
             ),
@@ -161,15 +215,19 @@ class AutoSaveForm extends Form
             try {
                 $this->loadPost();
                 $valuesBeforeSave = $this->entity->get();
+
                 $response = $this->hook(self::HOOK_SUBMIT);
 
-                $modifiedResponse = new JsBlock([]);
+                $modifiedResponse = $response instanceof JsBlock ? $response : new JsBlock([]);
+
                 if (is_array($response)) {
                     foreach ($response as $value) {
                         if ($value instanceof JsExpressionable) {
                             $modifiedResponse->addStatement($value);
                         }
                     }
+                } elseif ($response instanceof JsExpressionable && !$response instanceof JsBlock) {
+                    $modifiedResponse->addStatement($response);
                 }
 
                 //add basic class to save button in case of success
@@ -221,7 +279,7 @@ class AutoSaveForm extends Form
 
     protected function jsUpdateControlValue(Control $control): JsExpressionable
     {
-        if ($control instanceof Dropdown) {
+        if ($control instanceof Dropdown || $control instanceof Lookup) {
             return new JsBlock(
                 [
                     (new Jquery($control))->children('.ui.dropdown')
@@ -245,13 +303,24 @@ class AutoSaveForm extends Form
                     $this->jsUpdateInitialValue($control)
                 ]
             );
+        } elseif ($control instanceof Calendar) {
+            return new JsBlock(
+                [
+                    $control->jsInput()->val($control->getValue()),
+                    $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . '_input'),
+                    $this->jsUpdateInitialValue($control)
+                ]
+            );
+        } elseif ($control instanceof Radio /*|| $control instanceof Checkbox*/) {
+            return new JsBlock(
+                [
+                    //set checked	Set a checkbox state to checked without callbacks
+                    //set unchecked
+                    (new Jquery($control))->checkbox($control->entityField->get() ? 'set checked' : 'set unchecked'),
+                    $this->jsFieldChangedAnimation('#' . $control->getHtmlId()),
+                ]
+            );
         }
-        return new JsBlock(
-            [
-                $control->jsInput()->val($control->getValue()),
-                $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . '_input'),
-            ]
-        );
     }
 
     protected function jsUpdateInitialValue(Control $control): JsExpression
