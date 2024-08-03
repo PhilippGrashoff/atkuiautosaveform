@@ -16,61 +16,79 @@ use Atk4\Ui\Js\JsExpressionable;
 use Atk4\Ui\View;
 use Closure;
 
+/**
+ * This Form extension does 2 things:
+ * 1) it automatically submits if a user changes a control value, e.g. selects a dropdown or types some text into
+ *    a text input.
+ * 2) If a field value is updated within form submit (e.g. if Model::save() modifies field values before saving),
+ *    the AutoSaveForm updates the matching controls accordingly.
+ *
+ * To create a proper UI experience, the save button of the form is used. It has 3 states:
+ * 1) "Initial": Only a colored outline (using FUI`s "basic" class). This means that no value within the form was changed
+ *    - the initial state when the form is loaded.
+ * 2) "Highlighted": A colored background. Indicates that changes to a value were detected.
+ * 3) "Highlighted and loading" The button is colored and has a loading animation on it. This indicates that the form
+ *    submission is happening.
+ *
+ * //TODO add a link to a small youtube video when this is more finished.
+ */
 class AutoSaveForm extends Form
 {
     /**
+     * @var string The string that is passed to .animate() to indicate that a control value was updated as a result of
+     * the form submission.
+     * Mor about .animate(): https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API/Using_the_Web_Animations_API
+     */
+    public string $animationOnJsValueUpdate = '[{"background": "palegreen"}, {"background": "#ffffff"}], {duration: 4000, easing: "ease-out"}';
+
+    /**
+     * @var int $loadingDuration how long the "loading" state is at least applied.
+     * A minimum of about 300ms is needed in order to give the user a proper UI feedback that form is submitted
+     */
+    public int $loadingDuration = 300;
+
+    /**
+     * 1) set the stateContext (where the "loading" class is added to on form submit). For AUtoSaveForm, setting the
+     *    stateContext to the save button is sensible. Otherwise, the whole form is displayed as loading on each form submit.
+     *    $this->buttonSave might be modified after init(), hence this is put into renderView()
+     * 2) add according event listeners to each control so this Form is submitted if the control is changed.
+     * @return void
      * @throws Exception
      */
     protected function renderView(): void
     {
-        //in renderView as $this->buttonSave might be modified after init()
         $this->setApiConfig(
             [
                 'stateContext' => $this->buttonSave,
-                'loadingDuration' => '300',
-                'interruptRequests' => true
+                'loadingDuration' => $this->loadingDuration
             ]
         );
 
         foreach ($this->controls as $control) {
             $this->addAutoSubmitToControl($control);
         }
+
+        $this->buttonSave->addClass('basic');
+
         parent::renderView();
     }
 
     /**
-     * Calls the fitting addAutoSubmit... method depending on the control type
+     * add the fitting event handlers for automatic form submit depending on the control type
+     * TODO check against all atk4 native input types if the action is correct/sensible.
      * @throws Exception
      */
     protected function addAutoSubmitToControl(Form\Control $control): void
     {
         match (get_class($control)) {
-            Dropdown::class => $this->addAutoSubmitToDropdown($control),
-            Textarea::class => $this->addAutoSubmitToTextarea($control),
-            Line::class => $this->addAutoSubmitToLine($control),
+            Textarea::class => $this->addKeyUpEventsToControl($control, 'textarea'),
+            Line::class => $this->addKeyUpEventsToControl($control),
             default => $this->addOnChangeEventToControl($control)
         };
     }
 
-    protected function addAutoSubmitToDropdown(Dropdown $control): void
-    {
-        $this->addOnChangeEventToControl($control);
-    }
-
-    protected function addAutoSubmitToLine(Line $control): void
-    {
-        $this->addFocusOutEventToControl($control);
-        $this->addKeyUpEventsToControl($control);
-    }
-
-    protected function addAutoSubmitToTextarea(Textarea $control): void
-    {
-        $this->addFocusOutEventToControl($control, 'textarea');
-        $this->addKeyUpEventsToControl($control, 'textarea');
-    }
-
     /**
-     * TODO think about existing onChange that might be attached to the dropdown already. Maybe better just use
+     * TODO think about existing onChange that might be attached to the dropdown/control already. Maybe better just use
      * a JQuery to add an additional onChange event to Dropdown?
      *
      * @param Control $control
@@ -91,32 +109,6 @@ class AutoSaveForm extends Form
     }
 
     /**
-     * This could probably be removed if a well-working keypress / keyup handler is implemented for text fields
-     *
-     * @param Control $control
-     * @param string $inputTag
-     * @return void
-     * @throws Exception
-     */
-    protected function addFocusOutEventToControl(Control $control, string $inputTag = 'input'): void
-    {
-        $control->setAttr('data-initialvalue', $control->getValue());
-        $control->on(
-            'focusout',
-            new JsExpression (
-                'if([control].data("initialvalue") !== [inputValue]) {'
-                . '[submitForm]; [control].data("initialvalue", [inputValue]); 
-                    };',
-                [
-                    'control' => (new Jquery($control)),
-                    'inputValue' => (new Jquery($control))->children($inputTag)->val(),
-                    'submitForm' => $this->js()->form('submit'),
-                ]
-            )
-        );
-    }
-
-    /**
      * @param Control $control
      * @param string $inputTag
      * @return void
@@ -127,16 +119,28 @@ class AutoSaveForm extends Form
         $control->on(
             'keyup',
             new JsExpression(
-                'if([control].data("initialvalue") !== [inputValue]) {'
-                . '[savebutton].removeClass("basic");}'
-                . 'else {[savebutton].addClass("basic");'
-                .' atk.createDebouncedFx((evt) => {console.log("fsdfsfs");}, 250);}', //TODO this does not work at the moment. Find a way to add a debounced action without additional js file needed
+                '
+                if([control].data("initialvalue") !== [inputValue]) {
+                    [savebutton].removeClass("basic");
+                    clearTimeout([control].data("timerId"));
+                    let timer = setTimeout(() => {
+                        [submitForm]; [control].data("initialvalue", [inputValue]);
+                    }, 700);
+                    [control].data("timerId", timer);
+                }
+                else {
+                    [savebutton].addClass("basic");
+                    clearTimeout([control].data("timerId"));
+                }',
                 [
                     'control' => (new Jquery($control)),
                     'inputValue' => (new Jquery($control))->children($inputTag)->val(),
-                    'savebutton' => (new Jquery($this->buttonSave))
+                    'savebutton' => (new Jquery($this->buttonSave)),
+                    'submitForm' => $this->js()->form('submit'),
                 ],
-            )
+            ),
+
+
         );
     }
 
@@ -222,30 +226,43 @@ class AutoSaveForm extends Form
                 [
                     (new Jquery($control))->children('.ui.dropdown')
                         ->dropdown('set selected', $control->getValue(), true),
-                    $this->getFieldChangedAnimation('#' . $control->getHtmlId() . ' .ui.dropdown')
+                    $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . ' .ui.dropdown')
                 ]
             );
         } elseif ($control instanceof Textarea) {
             return new JsBlock(
                 [
                     $control->jsInput()->val($control->getValue()),
-                    $this->getFieldChangedAnimation('#' . $control->getHtmlId() . ' textarea')
+                    $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . ' textarea'),
+                    $this->jsUpdateInitialValue($control)
+                ]
+            );
+        } elseif ($control instanceof Line) {
+            return new JsBlock(
+                [
+                    $control->jsInput()->val($control->getValue()),
+                    $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . '_input'),
+                    $this->jsUpdateInitialValue($control)
                 ]
             );
         }
         return new JsBlock(
             [
                 $control->jsInput()->val($control->getValue()),
-                $this->getFieldChangedAnimation('#' . $control->getHtmlId() . '_input')
+                $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . '_input'),
             ]
         );
     }
 
-    protected function getFieldChangedAnimation(string $querySelector): JsExpression
+    protected function jsUpdateInitialValue(Control $control): JsExpression
+    {
+        return (new Jquery($control))->data('initialvalue', $control->getValue());
+    }
+
+    protected function jsFieldChangedAnimation(string $querySelector): JsExpression
     {
         return new JsExpression(
-            'document.querySelector("' . $querySelector . '").animate('
-            . '[{"background": "palegreen"}, {"background": "#ffffff"}], {duration: 4000, easing: "ease-out"});'
+            'document.querySelector("' . $querySelector . '").animate(' . $this->animationOnJsValueUpdate . ');'
         );
     }
 
