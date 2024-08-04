@@ -15,9 +15,9 @@ class DemoModel extends Model
         $this->addField('line', ['type' => 'string', 'default' => 'line']);
         $this->addField('textarea', ['type' => 'text', 'default' => 'textarea']);
         $this->addField('checkbox', ['type' => 'boolean', 'default' => true]);
-        $this->addField('datetime', ['type' => 'datetime', 'default' => new \DateTime()]);
+        $this->addField('datetime', ['type' => 'datetime', 'default' => $this->removeNanoSeconds(new \DateTime())]);
         $this->addField('date', ['type' => 'date', 'default' => new \DateTime()]);
-        $this->addField('time', ['type' => 'time', 'default' => new \DateTime()]);
+        $this->addField('time', ['type' => 'time', 'default' => $this->removeNanoSeconds(new \DateTime())]);
         $this->addField(
             'dropdown',
             [
@@ -35,6 +35,9 @@ class DemoModel extends Model
                 'ui' => ['form' => [Radio::class]]
             ]
         );
+
+        $this->hasOne('demo_model_2_id', ['model' => [DemoModel2::class], 'caption' => 'Lookup']);
+
         $this->addField('change', ['type' => 'boolean', 'caption' => 'Change Field values during save()']);
         $this->onHook(
             Model::HOOK_BEFORE_SAVE,
@@ -50,11 +53,26 @@ class DemoModel extends Model
     {
         $this->set('line', $this->get('line') . ' changed');
         $this->set('textarea', $this->get('textarea') . ' changed');
-        //TODO CheckBox
-        $this->set('datetime', $this->get('datetime') ? $this->get('datetime')->modify('+ 1 Day') : new \DateTime());
-        $this->set('date', $this->get('date') ? $this->get('date')->modify('+ 1 Day') : new \DateTime());
-        $this->set('time', $this->get('time') ? $this->get('time')->modify('+ 1 Minute') : new \DateTime());
+        $this->set('checkbox', !$this->get('checkbox'));
+        $this->set('datetime', $this->removeNanoSeconds((new \DateTime())->modify('+ ' . rand(1, 100) . ' Days')));
+        $this->set('date', (new \DateTime())->modify('+ ' . rand(1, 100) . ' Days'));
+        $this->set('time', $this->removeNanoSeconds((new \DateTime())->modify('+ ' . rand(1, 1000) . ' Minutes')));
         $this->set('dropdown', $this->get('dropdown') === 2 ? 1 : 2);
         $this->set('radio', $this->get('radio') === 2 ? 1 : 2);
+        $this->set('demo_model_2_id', rand(0,9));
+    }
+
+
+    public function removeNanoSeconds(\DateTimeInterface $dateTime): \DateTimeInterface
+    {
+        if (!$dateTime instanceof \DateTime) {
+            throw new \InvalidArgumentException('Invalid date object.');
+        }
+
+        return $dateTime->setTime(
+            (int) $dateTime->format('G'), // hours
+            (int) $dateTime->format('i'), // minutes
+            (int) $dateTime->format('s')  // seconds
+        );
     }
 }

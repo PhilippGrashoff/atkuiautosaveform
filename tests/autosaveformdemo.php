@@ -10,11 +10,19 @@ use Atk4\Ui\Js\JsToast;
 use Atk4\Ui\Layout\Centered;
 use PhilippR\Atk4\AutoSaveForm\AutoSaveForm;
 use PhilippR\Atk4\AutoSaveForm\Tests\testfiles\DemoModel;
+use PhilippR\Atk4\AutoSaveForm\Tests\testfiles\DemoModel2;
 
 $persistence = Persistence::connect('sqlite::memory:');
 $demoModel = new DemoModel($persistence);
 (new Migrator($demoModel))->create();
 $entity = $demoModel->createEntity()->save();
+
+//demoModel2 used for Lookup testing. Add some entities to be able to test lookup properly
+$demoModel2 = new DemoModel2($persistence);
+(new Migrator($demoModel2))->create();
+for($i = 0; $i < 10; $i++) {
+    $demoModel2Entity = $demoModel2->createEntity()->save(['name' => 'DemoModel2 ' . $i]);
+}
 
 $app = new App(['title' => 'AutoSaveForm Demo']);
 $app->initLayout([Centered::class]);

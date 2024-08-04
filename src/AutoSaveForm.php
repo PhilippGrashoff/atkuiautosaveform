@@ -17,6 +17,7 @@ use Atk4\Ui\Js\Jquery;
 use Atk4\Ui\Js\JsBlock;
 use Atk4\Ui\Js\JsExpression;
 use Atk4\Ui\Js\JsExpressionable;
+use Atk4\Ui\Js\JsFunction;
 use Atk4\Ui\View;
 use Closure;
 
@@ -94,8 +95,9 @@ class AutoSaveForm extends Form
             $this->addOnInputEventToControl($control, 'textarea');
             $this->addInitialValue($control);
         } elseif ($control instanceof Calendar) {
-            $this->addOnInputEventToControl($control, 'input', false);
+            $this->addOnInputEventToControl($control, 'input', 'keyup', false);
             $this->addOnChangeToCalendar($control);
+            $this->addOnValueUpdateToCalendar($control);
             $this->disableEnterKeyForControl($control);
             $this->addInitialValue($control);
         } elseif ($control instanceof Line) {
@@ -150,8 +152,34 @@ class AutoSaveForm extends Form
         $control->onChange(
             new JsBlock(
                 [
+                    (new Jquery($this->buttonSave))->removeClass('basic'),
+                    $this->js()->form('submit'),
                     (new Jquery($control))->data('initialvalue', (new Jquery($control))->children('input')->val()),
-                    $this->js()->form('submit')
+                ]
+            )
+        );
+    }
+
+    /**
+     * For time inputs: Highlight Save button when Arrows are used to increase/decrease time
+     *
+     * @param Calendar $control
+     * @return void
+     */
+    protected function addOnValueUpdateToCalendar(Calendar $control): void
+    {
+        $control->options['onValueUpdate'] = new JsFunction(
+            ['date', 'text', 'mode'],
+            new JsBlock(
+                [
+                    new JsExpression(
+                        'if([control].data("initialvalue") !== [inputValue]) {[saveButton].removeClass("basic");}',
+                        [
+                            'control' => (new Jquery($control)),
+                            'inputValue' => (new Jquery($control))->children('input')->val(),
+                            'saveButton' => (new Jquery($this->buttonSave)),
+                        ],
+                    ),
                 ]
             )
         );
@@ -160,6 +188,7 @@ class AutoSaveForm extends Form
     /**
      * @param Control $control
      * @param string $inputTag
+     * @param string $eventType
      * @param bool $addFormSubmit
      * @return void
      * @throws Exception
@@ -167,10 +196,11 @@ class AutoSaveForm extends Form
     protected function addOnInputEventToControl(
         Control $control,
         string $inputTag = 'input',
+        string $eventType = 'input',
         bool $addFormSubmit = true
     ): void {
         $control->on(
-            'input',
+            $eventType,
             new JsExpression(
                 '
                 if([control].data("initialvalue") !== [inputValue]) {
@@ -193,8 +223,6 @@ class AutoSaveForm extends Form
                     'submitForm' => $this->js()->form('submit'),
                 ],
             ),
-
-
         );
     }
 
@@ -311,14 +339,27 @@ class AutoSaveForm extends Form
                     $this->jsUpdateInitialValue($control)
                 ]
             );
-        } elseif ($control instanceof Radio /*|| $control instanceof Checkbox*/) {
+        } elseif ($control instanceof Radio) {
             return new JsBlock(
                 [
-                    //set checked	Set a checkbox state to checked without callbacks
-                    //set unchecked
-                    (new Jquery($control))->checkbox($control->entityField->get() ? 'set checked' : 'set unchecked'),
+                    //Radio is tricky as FUI creates a checkbox per radio option. We need to find the right one based
+                    //on the input's value and check it.
+                    (new Jquery($control))->find(
+                        'input[name="' . $control->shortName . '"][value="' . $control->entityField->get() . '"]'
+                    )->parent()->checkbox('set checked'),
                     $this->jsFieldChangedAnimation('#' . $control->getHtmlId()),
                 ]
+            );
+        } elseif ($control instanceof Checkbox) {
+            return new JsBlock(
+                [
+                    (new Jquery($control))->checkbox($control->entityField->get() ? 'set checked' : 'set unchecked'),
+                    $this->jsFieldChangedAnimation('#' . $control->getHtmlId(), true),
+                ]
+            );
+        } else {
+            return new JsExpression(
+                'console.log("Automatic Control update for ' . get_class($control) . ' not implemented yet");'
             );
         }
     }
@@ -328,10 +369,12 @@ class AutoSaveForm extends Form
         return (new Jquery($control))->data('initialvalue', $control->getValue());
     }
 
-    protected function jsFieldChangedAnimation(string $querySelector): JsExpression
+    protected function jsFieldChangedAnimation(string $querySelector, bool $useParentNode = false): JsExpression
     {
         return new JsExpression(
-            'document.querySelector("' . $querySelector . '").animate(' . $this->animationOnJsValueUpdate . ');'
+            'document.querySelector("' . $querySelector . '")'
+            . ($useParentNode ? '.parentNode' : '')
+            . '.animate(' . $this->animationOnJsValueUpdate . ');'
         );
     }
 
