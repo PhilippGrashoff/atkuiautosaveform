@@ -4,3 +4,4 @@ composer.lock
 /coverage
 .phpunit.result.cache
 /config_local.php
+auth.json

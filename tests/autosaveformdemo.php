@@ -28,7 +28,7 @@ $app = new App(['title' => 'AutoSaveForm Demo']);
 $app->initLayout([Centered::class]);
 
 $autoSaveForm = AutoSaveForm::addTo($app);
-$autoSaveForm->setModel($entity);
+$autoSaveForm->setEntity($entity);
 
 $autoSaveForm->onSubmit(static function ($form) use ($app) {
     $form->entity->save();

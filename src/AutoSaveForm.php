@@ -116,7 +116,7 @@ class AutoSaveForm extends Form
 
     protected function addInitialValue(Control $control): void
     {
-        $control->setAttr('data-initialvalue', $control->getValue());
+        $control->setAttr('data-initialvalue', $control->getInputValue());
     }
 
     /**
@@ -311,14 +311,14 @@ class AutoSaveForm extends Form
             return new JsBlock(
                 [
                     (new Jquery($control))->children('.ui.dropdown')
-                        ->dropdown('set selected', $control->getValue(), true),
+                        ->dropdown('set selected', $control->getInputValue(), true),
                     $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . ' .ui.dropdown')
                 ]
             );
         } elseif ($control instanceof Textarea) {
             return new JsBlock(
                 [
-                    $control->jsInput()->val($control->getValue()),
+                    $control->jsInput()->val($control->getInputValue()),
                     $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . ' textarea'),
                     $this->jsUpdateInitialValue($control)
                 ]
@@ -326,7 +326,7 @@ class AutoSaveForm extends Form
         } elseif ($control instanceof Line) {
             return new JsBlock(
                 [
-                    $control->jsInput()->val($control->getValue()),
+                    $control->jsInput()->val($control->getInputValue()),
                     $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . '_input'),
                     $this->jsUpdateInitialValue($control)
                 ]
@@ -334,7 +334,7 @@ class AutoSaveForm extends Form
         } elseif ($control instanceof Calendar) {
             return new JsBlock(
                 [
-                    $control->jsInput()->val($control->getValue()),
+                    $control->jsInput()->val($control->getInputValue()),
                     $this->jsFieldChangedAnimation('#' . $control->getHtmlId() . '_input'),
                     $this->jsUpdateInitialValue($control)
                 ]
@@ -366,7 +366,7 @@ class AutoSaveForm extends Form
 
     protected function jsUpdateInitialValue(Control $control): JsExpression
     {
-        return (new Jquery($control))->data('initialvalue', $control->getValue());
+        return (new Jquery($control))->data('initialvalue', $control->getInputValue());
     }
 
     protected function jsFieldChangedAnimation(string $querySelector, bool $useParentNode = false): JsExpression
