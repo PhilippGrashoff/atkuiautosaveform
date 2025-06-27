@@ -116,7 +116,7 @@ class AutoSaveForm extends Form
 
     protected function addInitialValue(Control $control): void
     {
-        $control->setAttr('data-initialvalue', $control->getInputValue());
+        $control->setAttr('data-initialvalue', $control->getInputValue() ?? '');
     }
 
     /**

@@ -5,3 +5,4 @@ composer.lock
 .phpunit.result.cache
 /config_local.php
 auth.json
+composer.phar
