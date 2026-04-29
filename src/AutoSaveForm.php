@@ -104,9 +104,10 @@ class AutoSaveForm extends Form
             $this->addOnInputEventToControl($control);
             $this->disableEnterKeyForControl($control);
             $this->addInitialValue($control);
+        } elseif ($control instanceof Dropdown) {
+            $this->addDropDownOnChangeEventToControl($control);
         } elseif (
-            $control instanceof Dropdown
-            || $control instanceof Lookup
+            $control instanceof Lookup
             || $control instanceof Radio
             || $control instanceof Checkbox
         ) {
@@ -117,6 +118,23 @@ class AutoSaveForm extends Form
     protected function addInitialValue(Control $control): void
     {
         $control->setAttr('data-initialvalue', $control->getInputValue() ?? '');
+    }
+
+    /**
+     * Use FUI onChange for Dropdowns, otherwise on change fires twice if text search input is used in dropdown
+     * @param Control $control
+     * @return void
+     * @throws Exception
+     */
+    protected function addDropDownOnChangeEventToControl(Dropdown $control): void
+    {
+        $control->dropdownOptions['onChange'] = new JsFunction(
+            ['value', 'text', 'choice'],
+            new JsBlock([
+                (new Jquery($this->buttonSave))->removeClass('basic'),
+                $this->js()->form('submit')
+            ])
+        );
     }
 
     /**
@@ -195,10 +213,11 @@ class AutoSaveForm extends Form
      */
     protected function addOnInputEventToControl(
         Control $control,
-        string $inputTag = 'input',
-        string $eventType = 'input',
-        bool $addFormSubmit = true
-    ): void {
+        string  $inputTag = 'input',
+        string  $eventType = 'input',
+        bool    $addFormSubmit = true
+    ): void
+    {
         $control->on(
             $eventType,
             new JsExpression(
