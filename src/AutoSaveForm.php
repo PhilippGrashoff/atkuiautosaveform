@@ -122,18 +122,30 @@ class AutoSaveForm extends Form
 
     /**
      * Use FUI onChange for Dropdowns, otherwise on change fires twice if text search input is used in dropdown
-     * @param Control $control
+     * @param Dropdown $control
      * @return void
-     * @throws Exception
      */
     protected function addDropDownOnChangeEventToControl(Dropdown $control): void
     {
+        $existingOnChange = $control->dropdownOptions['onChange'] ?? null;
+
+        $statements = [];
+
+        if ($existingOnChange instanceof JsFunction) {
+            $statements[] = $existingOnChange;
+        } elseif ($existingOnChange instanceof JsExpressionable) {
+            $statements[] = new JsExpression(
+                '([existing])(value, text, choice)',
+                ['existing' => $existingOnChange]
+            );
+        }
+
+        $statements[] = (new Jquery($this->buttonSave))->removeClass('basic');
+        $statements[] = $this->js()->form('submit');
+
         $control->dropdownOptions['onChange'] = new JsFunction(
             ['value', 'text', 'choice'],
-            new JsBlock([
-                (new Jquery($this->buttonSave))->removeClass('basic'),
-                $this->js()->form('submit')
-            ])
+            new JsBlock($statements)
         );
     }
 
