@@ -94,16 +94,19 @@ class AutoSaveForm extends Form
         if ($control instanceof Textarea) {
             $this->addOnInputEventToControl($control, 'textarea');
             $this->addInitialValue($control);
+            $this->addOnBlurEventToControl($control, 'textarea');
         } elseif ($control instanceof Calendar) {
             $this->addOnInputEventToControl($control, 'input', 'keyup', false);
             $this->addOnChangeToCalendar($control);
             $this->addOnValueUpdateToCalendar($control);
             $this->disableEnterKeyForControl($control);
             $this->addInitialValue($control);
+            $this->addOnBlurEventToControl($control);
         } elseif ($control instanceof Line) {
             $this->addOnInputEventToControl($control);
             $this->disableEnterKeyForControl($control);
             $this->addInitialValue($control);
+            $this->addOnBlurEventToControl($control);
         } elseif ($control instanceof Dropdown) {
             $this->addDropDownOnChangeEventToControl($control);
         } elseif (
@@ -234,23 +237,58 @@ class AutoSaveForm extends Form
             $eventType,
             new JsExpression(
                 '
-                if([control].data("initialvalue") !== [inputValue]) {
-                    [saveButton].removeClass("basic");'
+                    if([control].data("initialvalue") !== [inputValue]) {
+                        [saveButton].removeClass("basic");'
                 . ($addFormSubmit ? 'clearTimeout([control].data("timerId"));
-                    let timer = setTimeout(() => {
-                        [submitForm]; [control].data("initialvalue", [inputValue]);
-                    }, ' . $this->waitBeforeSubmit . ');
-                    [control].data("timerId", timer);'
+                        let timer = setTimeout(() => {
+                            [submitForm]; [control].data("initialvalue", [inputValue]);
+                        }, ' . $this->waitBeforeSubmit . ');
+                        [control].data("timerId", timer);'
                     : '') . '
-                }
-                else {
-                    [saveButton].addClass("basic");'
+                    }
+                    else {
+                        [saveButton].addClass("basic");'
                 . ($addFormSubmit ? 'clearTimeout([control].data("timerId"));' : '')
                 . '}',
                 [
                     'control' => (new Jquery($control)),
                     'inputValue' => (new Jquery($control))->children($inputTag)->val(),
                     'saveButton' => (new Jquery($this->buttonSave)),
+                    'submitForm' => $this->js()->form('submit'),
+                ],
+            ),
+        );
+    }
+
+    /**
+     * Immediately submits the form when a control loses focus, provided its value differs from the last
+     * submitted ("initial") value. Any pending debounce timer created by addOnInputEventToControl() is
+     * cancelled, so the value isn't submitted twice.
+     *
+     * We listen to "focusout" instead of "blur", because "blur" does not bubble and this listener is attached
+     * (like the other listeners in this class) without a child selector, relying on event bubbling from the
+     * actual <input>/<textarea> tag up to the control's root node.
+     *
+     * @param Control $control
+     * @param string $inputTag
+     * @return void
+     * @throws Exception
+     */
+    protected function addOnBlurEventToControl(Control $control, string $inputTag = 'input'): void
+    {
+        $control->on(
+            'focusout',
+            new JsExpression(
+                '
+                    if ([control].data("initialvalue") !== [inputValue]) {
+                        clearTimeout([control].data("timerId"));
+                        [submitForm];
+                        [control].data("initialvalue", [inputValue]);
+                    }
+                    ',
+                [
+                    'control' => (new Jquery($control)),
+                    'inputValue' => (new Jquery($control))->children($inputTag)->val(),
                     'submitForm' => $this->js()->form('submit'),
                 ],
             ),
